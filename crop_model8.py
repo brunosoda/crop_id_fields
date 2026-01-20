@@ -54,9 +54,9 @@ def crop_image(input_path, output_path, apply_mask=False):
 
     # Proportional crop region
     left = int(w * 0.14)
-    right = int(w * 0.7)
-    top = int(h * 0.38)
-    bottom = int(h * 0.487)
+    right = int(w * 0.71)
+    top = int(h * 0.35)
+    bottom = int(h * 0.47)
 
     x_min = max(0, min(left, right))
     y_min = max(0, min(top, bottom))
