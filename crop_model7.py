@@ -61,8 +61,8 @@ def crop_image(input_path, output_path, apply_mask=True):
 
     crop = img[y_min:y_max, x_min:x_max]
 
-    if apply_mask:
-        crop = mask_regions(crop)
+'''    if apply_mask:
+        crop = mask_regions(crop)'''
 
     if not cv2.imwrite(output_path, crop):
         raise Exception("Failed to write crop: {}".format(output_path))
