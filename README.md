@@ -210,6 +210,21 @@ The `crop_digital_cnh.py` script uses fixed proportional coordinates optimized f
 - All scripts handle common edge cases and provide informative error messages
 - The detection algorithms are optimized for document-like images with clear boundaries
 
+## GitHub Publishing
+
+If you already created a GitHub repo, run these commands from the project root:
+
+```bash
+git status
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin <YOUR_GITHUB_REPO_URL>
+git push -u origin main
+```
+
+If you already have a remote named `origin`, skip the `git remote add` step.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

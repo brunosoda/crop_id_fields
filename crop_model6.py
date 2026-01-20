@@ -1,5 +1,6 @@
 import cv2
 import os
+import sys
 
 
 def crop_image(input_path, output_path):
@@ -10,10 +11,10 @@ def crop_image(input_path, output_path):
     h, w = img.shape[:2]
 
     # Proportional points (clockwise)
-    left = int(w * 0.15)
-    right = int(w * 0.39)
-    top = int(h * 0.27)
-    bottom = int(h * 0.327)
+    left = int(w * 0.185)
+    right = int(w * 0.485)
+    top = int(h * 0.16)
+    bottom = int(h * 0.25)
 
     x_min = max(0, min(left, right))
     y_min = max(0, min(top, bottom))
@@ -54,7 +55,27 @@ def _batch_crop_temp():
         out_path = os.path.join(out_dir, out_name)
         crop_image(img_path, out_path)
         print(out_path)
-
+    
 
 if __name__ == "__main__":
-    _batch_crop_temp()
+    # CLI:
+    # python crop_model6.py <input.jpg> [output.jpg]
+    if len(sys.argv) >= 2:
+        input_path = sys.argv[1]
+
+        # Se não passar output, salva em ./cropped/<nome>_cropped.jpg
+        if len(sys.argv) >= 3:
+            output_path = sys.argv[2]
+        else:
+            base_dir = os.path.dirname(__file__)
+            out_dir = os.path.join(base_dir, "cropped")
+            os.makedirs(out_dir, exist_ok=True)
+            name = os.path.splitext(os.path.basename(input_path))[0]
+            output_path = os.path.join(out_dir, f"{name}_cropped.jpg")
+
+        crop_image(input_path, output_path)
+        print(output_path)
+    else:
+        # Sem argumentos -> mantém o batch
+        _batch_crop_temp()
+

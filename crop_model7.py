@@ -2,18 +2,54 @@ import cv2
 import os
 import sys
 
-def crop_image(input_path, output_path):
+
+# =========================
+# Masking (black rectangles)
+# =========================
+def mask_regions(img):
+    """
+    Aplica retângulos pretos em regiões que você não quer que o LLM enxergue.
+    As coordenadas são proporcionais (0..1), para funcionar em qualquer resolução.
+    Ajuste os valores conforme o seu layout.
+    """
+    h, w = img.shape[:2]
+    out = img.copy()
+
+    # (x1, y1, x2, y2) em porcentagem do tamanho da imagem
+    rects = [
+        # EXEMPLOS - AJUSTE:
+        # 1) Escritas em verde no canto superior esquerdo
+        (0.00, 0.00, 0.35, 0.19),
+
+        # 2) Foto 3x4 (lado esquerdo)
+        (0.00, 0.33, 0.17, 1.00),
+
+        # 3) Toda informação textual abaixo do número vermelho do lado direito
+        (0.65, 0.12, 1.00, 1.00),
+    ]
+
+    for (x1p, y1p, x2p, y2p) in rects:
+        x1 = int(x1p * w)
+        y1 = int(y1p * h)
+        x2 = int(x2p * w)
+        y2 = int(y2p * h)
+        cv2.rectangle(out, (x1, y1), (x2, y2), (0, 0, 0), thickness=-1)
+
+    return out
+
+
+def crop_image(input_path, output_path, apply_mask=True):
     img = cv2.imread(input_path)
     if img is None:
         raise Exception("Could not read the image: {}".format(input_path))
 
     h, w = img.shape[:2]
 
-    # Proportional points (clockwise)
-    left = int(w * 0.116)
-    right = int(w * 0.44)
-    top = int(h * 0.215)
-    bottom = int(h * 0.334)
+    # Proportional crop region
+    left = int(w * 0.14)
+    right = int(w * 0.7)
+    top = int(h * 0.38)
+    bottom = int(h * 0.487)
 
     x_min = max(0, min(left, right))
     y_min = max(0, min(top, bottom))
@@ -24,6 +60,9 @@ def crop_image(input_path, output_path):
         raise Exception("Invalid crop coordinates for: {}".format(input_path))
 
     crop = img[y_min:y_max, x_min:x_max]
+
+    if apply_mask:
+        crop = mask_regions(crop)
 
     if not cv2.imwrite(output_path, crop):
         raise Exception("Failed to write crop: {}".format(output_path))
@@ -52,19 +91,23 @@ def _batch_crop_temp():
         img_path = os.path.join(temp_dir, filename)
         out_name = "digital_cnh_cropped_{}.jpg".format(idx)
         out_path = os.path.join(out_dir, out_name)
-        crop_image(img_path, out_path)
+        crop_image(img_path, out_path, apply_mask=True)
         print(out_path)
 
 
 if __name__ == "__main__":
     # CLI:
-    # python crop_model6.py <input.jpg> [output.jpg]
-    if len(sys.argv) >= 2:
-        input_path = sys.argv[1]
+    # python crop_model6.py <input.jpg> [output.jpg] [--no-mask]
+    apply_mask = True
+    args = [a for a in sys.argv[1:] if a != "--no-mask"]
+    if "--no-mask" in sys.argv:
+        apply_mask = False
 
-        # Se não passar output, salva em ./cropped/<nome>_cropped.jpg
-        if len(sys.argv) >= 3:
-            output_path = sys.argv[2]
+    if len(args) >= 1:
+        input_path = args[0]
+
+        if len(args) >= 2:
+            output_path = args[1]
         else:
             base_dir = os.path.dirname(__file__)
             out_dir = os.path.join(base_dir, "cropped")
@@ -72,8 +115,7 @@ if __name__ == "__main__":
             name = os.path.splitext(os.path.basename(input_path))[0]
             output_path = os.path.join(out_dir, f"{name}_cropped.jpg")
 
-        crop_image(input_path, output_path)
+        crop_image(input_path, output_path, apply_mask=apply_mask)
         print(output_path)
     else:
-        # Sem argumentos -> mantém o batch
         _batch_crop_temp()

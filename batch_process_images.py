@@ -34,7 +34,7 @@ def _read_json_rows(json_path):
             items = [data]
         else:
             raise ValueError("JSON must be an array of objects or a single object")
-        
+
         for item in items:
             conference_uuid = (item.get("conference_uuid") or "").strip()
             file_url = (item.get("file_url") or "").strip()
@@ -139,12 +139,12 @@ def _compare_ssim(image1_path, image2_path, resize=True):
     """Compare two images using SSIM (grayscale)."""
     img1 = cv2.imread(image1_path)
     img2 = cv2.imread(image2_path)
-    
+
     if img1 is None:
         raise FileNotFoundError("Could not read image: {}".format(image1_path))
     if img2 is None:
         raise FileNotFoundError("Could not read image: {}".format(image2_path))
-    
+
     # Resize if needed
     if resize and img1.shape[:2] != img2.shape[:2]:
         img2 = cv2.resize(
@@ -152,75 +152,89 @@ def _compare_ssim(image1_path, image2_path, resize=True):
             (img1.shape[1], img1.shape[0]),
             interpolation=cv2.INTER_AREA,
         )
-    
+
     # Convert to grayscale
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-    
+
     # Calculate SSIM
     score = ssim(gray1, gray2, data_range=255)
     return score
 
 
+def _di_type_from_model(model_num):
+    """
+    Map best model to di_type_optimized:
+    - model_1..5 -> CNH
+    - model_6 -> CIN
+    - model_7 -> RG
+    """
+    try:
+        n = int(str(model_num).strip())
+    except Exception:
+        return None
+
+    if n in (1, 2, 3, 4, 5):
+        return "CNH"
+    if n == 6:
+        return "CIN"
+    if n == 7:
+        return "RG"
+    return None
+
+
 def _find_best_crop(input_path, base_dir, conference_uuid):
-    """Try all crop models and return the best cropped image path and similarity score."""
+    """Try all crop models and return (best_crop_path, best_model_num, best_score)."""
     models = _find_crop_models(base_dir)
-    
+
     if not models:
         raise Exception("No crop_model*.py files found in {}".format(base_dir))
-    
+
     best_score = -1.0
     best_crop_path = None
     best_model_num = None
     temp_crops = []
-    
+
     for model_num, model_file in models:
         try:
-            # Load the crop module
             crop_module = _load_crop_module(model_file)
-            
-            # Create temp path for this model's crop
+
             crop_path = os.path.join(
                 TEMP_DIR, "{}_model{}_cropped.jpg".format(conference_uuid, model_num)
             )
             temp_crops.append(crop_path)
-            
-            # Crop the image
+
             crop_module.crop_image(input_path, crop_path)
-            
-            # Get the corresponding mask image path (try .jpg and .JPG)
+
             mask_image_path = os.path.join(MASKS_DIR, "mask_{}.jpg".format(model_num))
             if not os.path.isfile(mask_image_path):
                 mask_image_path = os.path.join(MASKS_DIR, "mask_{}.JPG".format(model_num))
             if not os.path.isfile(mask_image_path):
                 print("Warning: Mask image not found: mask_{}.jpg/JPG".format(model_num))
                 continue
-            
-            # Compare with mask image
+
             score = _compare_ssim(mask_image_path, crop_path, resize=True)
             print("Model {} similarity: {:.4f}".format(model_num, score))
-            
-            # Keep track of the best one
+
             if score > best_score:
                 best_score = score
                 best_crop_path = crop_path
                 best_model_num = model_num
-                
+
         except Exception as exc:
             print("Error processing model {}: {}".format(model_num, exc))
             continue
-    
+
     if best_crop_path is None:
         raise Exception("No valid crop model produced a result")
-    
-    # Delete all other cropped versions
+
     for crop_path in temp_crops:
         if crop_path != best_crop_path and os.path.isfile(crop_path):
             os.remove(crop_path)
             print("Deleted: {}".format(crop_path))
-    
+
     print("Best model: {} (similarity: {:.4f})".format(best_model_num, best_score))
-    return best_crop_path
+    return best_crop_path, best_model_num, best_score
 
 
 def main():
@@ -236,7 +250,6 @@ def main():
         return 1
 
     _prepare_temp_dir(TEMP_DIR)
-
 
     region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1"
     s3_client = boto3.client("s3", region_name=region)
@@ -257,22 +270,29 @@ def main():
         try:
             print("Downloading {}...".format(file_url))
             _download_image(file_url, input_path)
-            
-            # Try all crop models and keep the best one
-            best_crop_path = _find_best_crop(input_path, base_dir, conference_uuid)
-            
+
+            best_crop_path, best_model_num, best_score = _find_best_crop(
+                input_path, base_dir, conference_uuid
+            )
+
             # Rename best crop to the final output path if different
             if best_crop_path != output_path:
                 if os.path.isfile(output_path):
                     os.remove(output_path)
                 os.rename(best_crop_path, output_path)
-            
+
             _upload_image(s3_client, BUCKET_NAME, key, output_path)
             cropped_url = _build_output_url(s3_client, BUCKET_NAME, key)
+
+            di_type_optimized = _di_type_from_model(best_model_num)
+
             output_rows.append(
                 {
                     "conference_uuid": conference_uuid,
                     "cropped_file_url": cropped_url,
+                    "di_type_optimized": di_type_optimized,
+                    "best_model": str(best_model_num),
+                    "ssim_score": round(float(best_score), 4),
                 }
             )
             print("Uploaded: {}".format(key))
